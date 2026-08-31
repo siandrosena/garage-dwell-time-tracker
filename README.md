@@ -101,6 +101,33 @@ pytest tests/
 - **ByteTrack** — rastreamento multi-objeto
 - **OpenCV** — processamento de vídeo
 
+## 🚦 Filtro de sessão espúria (validado com vídeo real)
+
+Pensa assim: se você tá cronometrando um mecânico e o relógio pisca por meio segundo enquanto ele se mexe, isso não é "mais uma pessoa entrando" — é ruído do próprio instrumento. É basicamente isso que acontece quando o YOLO enxerga a mesma pessoa como uma 2ª caixa por poucos frames durante oclusão parcial (agachada embaixo do carro).
+
+`filter_spurious_sessions()` descarta qualquer sessão mais curta que um limiar configurável (padrão 1 segundo — `--min-session-seconds` no CLI). **Testado no mesmo vídeo real do mecânico:** antes do filtro, 5 sessões (1 real + 4 "fantasmas" de oclusão); depois do filtro, sobra só 1 sessão — o ID 1, com os mesmos 7.8s corretos de antes. As 4 sessões fantasmas (IDs 2-5, todas com menos de 0.5s) desaparecem sem afetar a medição real.
+
+## 🎯 Medir "perto do veículo", não "na área" (`vehicle_proximity.py`, experimental)
+
+**Isso muda o que o sistema mede.** Não é "quanto tempo teve gente na garagem" — é "quanto tempo teve gente TRABALHANDO NO veículo específico". Passar andando do lado não conta; ficar parado ao lado dele conta.
+
+Por que isso importa de verdade: "o ônibus 1048 ficou 3h parado, mas só teve mecânico junto dele por 40 minutos" é uma medida de **gargalo de processo de manutenção** — não é "esse funcionário trabalhou pouco". A pergunta que o sistema responde é sobre o VEÍCULO ("quanto tempo ele esperou por atendimento"), nunca sobre a PESSOA ("quanto essa pessoa produziu"). Essa distinção não é só discurso de venda — muda o que dá ou não pra fazer sem virar vigilância de funcionário (ver limitações abaixo).
+
+- **`BoundingBox.expanded()` + `is_near_vehicle()`** — "perto" é relativo ao tamanho do próprio veículo (meio comprimento/altura de folga), não uma distância fixa em pixels. Testado explicitamente: a mesma distância em pixels conta como "perto" de um caminhão grande e "longe" de um carro pequeno — do contrário um limiar fixo erraria pra qualquer veículo de tamanho diferente do que foi calibrado.
+- **`VehicleProximityTracker`** — mesma lógica de sessão do `DwellTracker`, mas a "zona" é o veículo (que se move), não um retângulo fixo do frame. Se a pessoa troca de veículo sem sair de "perto de algum", fecha a sessão do antigo e abre a do novo.
+- **10 testes** cobrindo: entrada/saída de proximidade, margem proporcional ao tamanho do veículo, escolha do veículo mais próximo quando há mais de um por perto, troca de veículo, e soma de tempo por veículo (juntando várias pessoas).
+
+### Teste real — e um achado honesto sobre detecção de veículo
+
+Rodei a detecção de verdade (script `scripts/test_vehicle_proximity_real.py`) pedindo ao YOLO pra detectar pessoa E veículo (carro/moto/ônibus/caminhão) ao mesmo tempo, em 2 vídeos reais:
+
+1. **Vídeo do mecânico (o mesmo do teste de oclusão, carro no elevador):** o YOLO detectou a pessoa normalmente, mas **zero detecções de veículo** — nenhuma, em nenhum frame. Motivo provável: o carro aparece de um ângulo atípico (chassi/parte de baixo, no elevador), bem diferente do "carro visto de lado/frente no chão" que o COCO (dataset de treino do YOLO padrão) tem em abundância.
+2. **Vídeo de um canteiro de obras (câmera aérea/drone, pessoas + carros estacionados ao fundo):** o mesmo modelo detectou **13 carros diferentes** sem problema — porque ali os carros aparecem numa silhueta "normal" (visto de cima/de lado, capô e teto reconhecíveis), mesmo com a câmera bem mais alta e distante que numa garagem.
+
+**Conclusão honesta:** a pergunta "o YOLO padrão dá conta de vista de cima?" tem uma resposta diferente pra pessoa e pra veículo. Pra **pessoa**, o teste de permanência (seção anterior deste README, vídeo de câmera elevada) já mostrou rastreamento contínuo, sem fragmentar. Pra **veículo**, o problema não é a altura da câmera — é o veículo estar numa posição/ângulo "reconhecível" como carro. Num cenário real de manutenção, o veículo MUITAS VEZES está erguido, parcialmente desmontado ou com o capô aberto — exatamente o tipo de silhueta atípica que fez a detecção falhar no teste 1. **Isso precisa ser testado com a câmera e os veículos reais da operação antes de prometer "sabemos quanto tempo o mecânico ficou no veículo X" pra um cliente** — não é uma limitação genérica de "vista de cima", é uma limitação específica de "veículo em manutenção não se parece com carro andando".
+
+**Não encontrei, com busca razoável em bancos de vídeo gratuitos (Pexels), um vídeo de licença livre com câmera de cima verdadeira (nadir) mostrando pessoa E veículo numa cena de oficina/garagem.** Os candidatos reais testados foram: um drone muito alto sobre um caminhão sendo carregado (sem nenhuma pessoa visível) e uma câmera aérea oblíqua de canteiro de obra (pessoas e carros longe um do outro, nunca próximos o suficiente pra gerar uma sessão de proximidade de verdade). Documentando isso em vez de simular um resultado bonito com dado que não existe.
+
 ## ⚠️ Limitações conhecidas
 
 - **Oclusão parcial gera detecções espúrias e curtas** — testado com vídeo real (ver seção acima): quando a pessoa fica parcialmente escondida (ex.: agachada embaixo do veículo), o YOLO ocasionalmente detecta uma segunda caixa por poucos frames, virando uma sessão curta separada e falsa. Uma aplicação real precisaria filtrar sessões abaixo de um limiar mínimo (1-2s).

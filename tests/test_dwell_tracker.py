@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from dwell_tracker import Zone, DwellTracker
+from dwell_tracker import Zone, DwellTracker, DwellSession, filter_spurious_sessions
 
 
 def make_tracker():
@@ -110,6 +110,42 @@ def test_duration_seconds_uses_fps():
 
     sessions = tracker.closed_sessions
     assert sessions[0].duration_seconds(fps=15) == 2.0
+
+
+def test_filter_spurious_sessions_drops_short_ones():
+    """Caso real: 4 IDs fantasma de <0.5s (oclusão parcial) junto com a
+    pessoa de verdade de 7.8s — só a sessão real deve sobrar."""
+    sessions = [
+        DwellSession(track_id=1, start_frame=0, end_frame=234),   # 7.8s a 30fps
+        DwellSession(track_id=2, start_frame=45, end_frame=45),   # 0.0s (fantasma)
+        DwellSession(track_id=3, start_frame=48, end_frame=60),   # 0.4s (fantasma)
+        DwellSession(track_id=4, start_frame=96, end_frame=105),  # 0.3s (fantasma)
+        DwellSession(track_id=5, start_frame=282, end_frame=291), # 0.3s (fantasma)
+    ]
+    filtrado = filter_spurious_sessions(sessions, fps=30, min_seconds=1.0)
+    assert [s.track_id for s in filtrado] == [1]
+
+
+def test_filter_spurious_sessions_keeps_sessions_at_or_above_threshold():
+    sessions = [
+        DwellSession(track_id=1, start_frame=0, end_frame=30),  # exatamente 1.0s a 30fps
+        DwellSession(track_id=2, start_frame=0, end_frame=29),  # pouco menos de 1.0s
+    ]
+    filtrado = filter_spurious_sessions(sessions, fps=30, min_seconds=1.0)
+    assert [s.track_id for s in filtrado] == [1]
+
+
+def test_filter_spurious_sessions_default_threshold_is_one_second():
+    sessions = [
+        DwellSession(track_id=1, start_frame=0, end_frame=15),  # 0.5s a 30fps
+        DwellSession(track_id=2, start_frame=0, end_frame=45),  # 1.5s a 30fps
+    ]
+    filtrado = filter_spurious_sessions(sessions, fps=30)
+    assert [s.track_id for s in filtrado] == [2]
+
+
+def test_filter_spurious_sessions_empty_list_returns_empty():
+    assert filter_spurious_sessions([], fps=30) == []
 
 
 def test_two_people_get_independent_sessions():

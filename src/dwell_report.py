@@ -17,7 +17,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 import cv2
 from ultralytics import YOLO
 
-from dwell_tracker import Zone, DwellTracker
+from dwell_tracker import Zone, DwellTracker, filter_spurious_sessions
 
 PERSON_CLASS_ID = 0
 
@@ -42,6 +42,12 @@ def build_arg_parser():
     parser.add_argument("--conf", type=float, default=0.35, help="Confiança mínima de detecção")
     parser.add_argument("--output", default="outputs/sessoes.csv", help="CSV de saída das sessões")
     parser.add_argument("--save-video", action="store_true", help="Salva vídeo anotado em outputs/annotated.mp4")
+    parser.add_argument(
+        "--min-session-seconds",
+        type=float,
+        default=1.0,
+        help="Descarta sessões mais curtas que isso (detecção espúria por oclusão, não permanência real)",
+    )
     return parser
 
 
@@ -109,10 +115,14 @@ def run(args):
     if writer is not None:
         writer.release()
 
+    todas_sessoes = tracker.closed_sessions
+    sessoes = filter_spurious_sessions(todas_sessoes, fps, min_seconds=args.min_session_seconds)
+    descartadas = len(todas_sessoes) - len(sessoes)
+
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer_csv = csv.DictWriter(f, fieldnames=["track_id", "inicio_seg", "fim_seg", "duracao_seg"])
         writer_csv.writeheader()
-        for session in tracker.closed_sessions:
+        for session in sessoes:
             writer_csv.writerow({
                 "track_id": session.track_id,
                 "inicio_seg": round(session.start_frame / fps, 1),
@@ -120,9 +130,13 @@ def run(args):
                 "duracao_seg": round(session.duration_seconds(fps), 1),
             })
 
+    totals = {}
+    for session in sessoes:
+        totals[session.track_id] = totals.get(session.track_id, 0.0) + session.duration_seconds(fps)
+
     print(f"Frames processados: {frame_idx}")
-    print(f"Sessões registradas: {len(tracker.closed_sessions)}")
-    for track_id, total in tracker.total_seconds_per_id(fps).items():
+    print(f"Sessões registradas: {len(sessoes)} (descartadas {descartadas} espúrias < {args.min_session_seconds}s)")
+    for track_id, total in totals.items():
         print(f"  ID {track_id}: {total:.1f}s no total perto do veículo")
     print(f"Log salvo em: {output_path}")
     return 0

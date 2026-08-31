@@ -122,3 +122,15 @@ class DwellTracker:
         for session in self._closed_sessions:
             totals[session.track_id] = totals.get(session.track_id, 0.0) + session.duration_seconds(fps)
         return totals
+
+
+def filter_spurious_sessions(sessions, fps, min_seconds=1.0):
+    """Descarta sessões curtas demais pra serem uma permanência real.
+
+    Achado em vídeo real: durante oclusão parcial (ex.: mecânico agachado
+    embaixo do carro), o YOLO às vezes enxerga a mesma pessoa como uma 2ª
+    caixa por poucos frames — isso vira uma sessão "fantasma" de menos de
+    1 segundo, de gente que nunca esteve ali de verdade. Uma permanência
+    real de trabalho dura segundos/minutos, não frações de segundo.
+    """
+    return [s for s in sessions if s.duration_seconds(fps) >= min_seconds]
