@@ -4,6 +4,10 @@
 
 *(English summary below ⬇️)*
 
+![Demonstração real: detecção de pessoa + zona de permanência rodando num vídeo real de mecânico](assets/dwell_demo.gif)
+
+*Detecção rodando de verdade — caixa azul "id:1 person" + zona amarela de permanência, sobre o [vídeo de teste real](https://www.pexels.com/video/a-worker-repairing-a-vehicle-8987075/) (não é mockup).*
+
 ---
 
 ## 🎯 O problema
@@ -48,12 +52,15 @@ python src/dwell_report.py --source video.mp4 --zone 0.2,0.2,0.8,0.9 --save-vide
 
 Testado num clipe real de mecânico trabalhando embaixo de um veículo erguido ([vídeo livre de licença](https://www.pexels.com/video/a-worker-repairing-a-vehicle-8987075/), 14.5s):
 
-```
-Frames processados: 437
-Sessões registradas: 5
-  ID 1: 7.8s no total perto do veículo
-  ID 2: 0.0s | ID 3: 0.4s | ID 4: 0.3s | ID 5: 0.3s
-```
+Log real gerado (`outputs/sessoes.csv`), 437 frames processados:
+
+| track_id | início (s) | fim (s) | duração (s) |
+|---|---|---|---|
+| 1 | 0.0 | 7.8 | **7.8** |
+| 2 | 1.5 | 1.5 | 0.0 |
+| 3 | 1.6 | 2.0 | 0.4 |
+| 4 | 3.2 | 3.5 | 0.3 |
+| 5 | 9.4 | 9.7 | 0.3 |
 
 O ID 1 é a pessoa de verdade (7.8s contínuos, batendo com o período em que ela fica visível no vídeo antes de ficar totalmente oculta pelo veículo). Os outros 4 IDs são **detecções espúrias e curtas** — o YOLO ocasionalmente enxerga a mesma pessoa como uma segunda caixa por poucos frames durante oclusão parcial (agachada embaixo do carro). Esse teste real também expôs um bug real que não aparecia no smoke test sintético: sem tratar isso, a sessão da pessoa que sai de cena ficava "aberta" até o fim do vídeo inteiro, inflando a duração — corrigido depois desse teste (`max_absence_frames`, ver `dwell_tracker.py`).
 
