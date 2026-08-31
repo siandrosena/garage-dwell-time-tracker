@@ -6,6 +6,9 @@ não pessoas, então o YOLO não detecta nada. O objetivo é só provar que o
 script roda ponta a ponta sem quebrar.
 """
 
+import os
+import sys
+
 import cv2
 import numpy as np
 
@@ -13,8 +16,15 @@ WIDTH, HEIGHT, FPS, SECONDS = 320, 240, 15, 4
 
 
 def main(output_path="sample_data/demo_smoke_test.mp4"):
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(output_path, fourcc, FPS, (WIDTH, HEIGHT))
+    if not writer.isOpened():
+        print(f"Não consegui abrir o VideoWriter pra: {output_path}", file=sys.stderr)
+        sys.exit(1)
 
     total_frames = FPS * SECONDS
     for i in range(total_frames):
