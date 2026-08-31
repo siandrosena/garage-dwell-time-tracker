@@ -32,6 +32,39 @@ def test_person_entering_and_leaving_zone_creates_one_session():
     assert sessions[0].end_frame == 3
 
 
+def test_session_closes_on_its_own_when_person_disappears_for_good():
+    """Regressão de um bug real achado testando com vídeo de verdade: pessoa
+    entra na zona e depois some pra sempre (sai de cena, oclusão longa) —
+    a sessão não pode ficar "aberta" até o fim do vídeo inteiro, inflando
+    a duração registrada muito além do tempo em que ela foi vista de fato."""
+    tracker = DwellTracker(zone=Zone(0, 0, 100, 100), max_absence_frames=5)
+    tracker.update([(1, 50, 50)], frame_idx=0)
+    tracker.update([(1, 50, 50)], frame_idx=1)
+    # ID 1 some de vez a partir daqui — nunca mais reaparece
+    for frame_idx in range(2, 20):
+        tracker.update([], frame_idx=frame_idx)
+    tracker.finalize(last_frame_idx=100)  # vídeo "continua" por muito mais tempo
+
+    sessions = tracker.closed_sessions
+    assert len(sessions) == 1
+    assert sessions[0].end_frame == 1  # fecha no último frame em que foi visto de verdade
+    assert sessions[0].end_frame != 100  # não infla até o fim do vídeo
+
+
+def test_brief_absence_within_tolerance_does_not_close_session_early():
+    tracker = DwellTracker(zone=Zone(0, 0, 100, 100), max_absence_frames=5)
+    tracker.update([(1, 50, 50)], frame_idx=0)
+    tracker.update([], frame_idx=1)  # some por só 1 frame, dentro da tolerância
+    tracker.update([(1, 50, 50)], frame_idx=2)
+    tracker.update([(1, 200, 200)], frame_idx=3)  # sai da zona de verdade
+    tracker.finalize(last_frame_idx=3)
+
+    sessions = tracker.closed_sessions
+    assert len(sessions) == 1
+    assert sessions[0].start_frame == 0
+    assert sessions[0].end_frame == 3
+
+
 def test_person_never_entering_zone_has_no_session():
     tracker = make_tracker()
     tracker.update([(1, 200, 200)], frame_idx=0)

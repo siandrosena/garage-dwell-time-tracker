@@ -39,6 +39,7 @@ class DwellTracker:
     zone: Zone
     max_reassign_dist: float = 60.0
     max_reassign_gap: int = 15
+    max_absence_frames: int = 45  # sessão fecha sozinha se a pessoa some por mais que isso
 
     _last_seen: dict = field(default_factory=dict)  # canonical_id -> (cx, cy, frame_idx)
     _open_sessions: dict = field(default_factory=dict)  # canonical_id -> start_frame
@@ -92,6 +93,19 @@ class DwellTracker:
                 cx, cy, last_frame = self._last_seen[tracked_id]
                 if frame_idx - last_frame == 1:
                     self._lost_tracks[tracked_id] = (cx, cy, last_frame)
+
+        self._close_long_absent_sessions(frame_idx)
+
+    def _close_long_absent_sessions(self, frame_idx):
+        """Sem isso, uma pessoa que o rastreador perde de vez no meio do vídeo
+        (sai de cena, fica oculta demais pra sempre) mantém a sessão "aberta"
+        até o finalize() do vídeo inteiro — inflando a duração registrada bem
+        além do tempo real em que ela foi vista de verdade."""
+        for canonical_id in list(self._open_sessions.keys()):
+            _, _, last_frame = self._last_seen[canonical_id]
+            if frame_idx - last_frame > self.max_absence_frames:
+                start_frame = self._open_sessions.pop(canonical_id)
+                self._closed_sessions.append(DwellSession(canonical_id, start_frame, last_frame))
 
     def finalize(self, last_frame_idx):
         """Fecha sessões que ainda estavam abertas quando o vídeo acabou."""
