@@ -62,6 +62,23 @@ Log real gerado (`outputs/sessoes.csv`), 437 frames processados:
 | 4 | 3.2 | 3.5 | 0.3 |
 | 5 | 9.4 | 9.7 | 0.3 |
 
+### O ângulo da câmera muda tudo — testado, não suposto
+
+Depois desse primeiro teste, testei o mesmo pipeline com uma câmera **elevada e mais distante** (ângulo tipo câmera de segurança de teto, em vez de altura de olho) sobre uma pessoa trabalhando numa máquina ([vídeo livre de licença](https://www.pexels.com/video/high-angle-shot-of-a-man-using-a-milling-machine-4941455/), 28.2s):
+
+![Câmera elevada: rastreamento contínuo, sem fragmentação](assets/dwell_demo_overhead.gif)
+
+```
+Frames processados: 706
+Sessões registradas: 2
+  ID 1: 28.2s no total perto do veículo   (quase o vídeo inteiro, sem cortar)
+  ID 3: 0.1s (ruído)
+```
+
+**Achado real:** com câmera elevada, a mesma pessoa ficou rastreada como 1 sessão contínua de 28.2s (só 1 detecção espúria de 0.1s) — contra 5 sessões fragmentadas no vídeo de câmera baixa. Ângulo elevado reduz oclusão (menos coisa tampando o corpo da pessoa vista de cima) e é literalmente a recomendação prática que sai desse teste: **para esse tipo de sistema, vale mais instalar a câmera alta e de longe do que perto e na altura dos olhos** — não é opinião, é o que os dois testes reais mostraram.
+
+**Sobre oclusão total (ex.: mecânico embaixo do veículo por muito tempo):** o sistema hoje assume que, se a pessoa some por mais que `max_absence_frames` (padrão: 45 frames, ~1.5s a 30fps) sem nenhuma detecção, a sessão fecha. Numa câmera bem posicionada (de cima, de longe) isso quase não acontece — o teste acima prova. Numa câmera baixa, com oclusão longa (pessoa realmente embaixo do carro por 10s+), o sistema atual vai fechar e reabrir sessões em vez de "saber que ela continua ali" — isso é uma limitação real, não escondida (ver abaixo), e a solução prática de novo é a mesma: câmera bem posicionada resolve na raiz, em vez de tentar adivinhar por software que alguém invisível "ainda está lá".
+
 O ID 1 é a pessoa de verdade (7.8s contínuos, batendo com o período em que ela fica visível no vídeo antes de ficar totalmente oculta pelo veículo). Os outros 4 IDs são **detecções espúrias e curtas** — o YOLO ocasionalmente enxerga a mesma pessoa como uma segunda caixa por poucos frames durante oclusão parcial (agachada embaixo do carro). Esse teste real também expôs um bug real que não aparecia no smoke test sintético: sem tratar isso, a sessão da pessoa que sai de cena ficava "aberta" até o fim do vídeo inteiro, inflando a duração — corrigido depois desse teste (`max_absence_frames`, ver `dwell_tracker.py`).
 
 **Conclusão honesta:** a detecção funciona em vídeo real, mas ruído de oclusão gera sessões curtas espúrias que uma aplicação de verdade precisaria filtrar (ex.: ignorar sessões abaixo de 1-2 segundos). Não é "pronto pra vender sem checar" — é uma base funcional com um problema real e conhecido, documentado em vez de escondido.
@@ -87,7 +104,8 @@ pytest tests/
 ## ⚠️ Limitações conhecidas
 
 - **Oclusão parcial gera detecções espúrias e curtas** — testado com vídeo real (ver seção acima): quando a pessoa fica parcialmente escondida (ex.: agachada embaixo do veículo), o YOLO ocasionalmente detecta uma segunda caixa por poucos frames, virando uma sessão curta separada e falsa. Uma aplicação real precisaria filtrar sessões abaixo de um limiar mínimo (1-2s).
-- **Não testado com câmera fixa de garagem de verdade, ainda** — o teste real usado foi um clipe de banco de imagens (ângulo/qualidade não necessariamente representativos de uma câmera fixa de oficina). Mesmo achado geral do [contador-onibus](https://github.com/siandrosena/contador-onibus): câmera/ângulo real precisa de validação própria antes de confiar no número numa operação específica.
+- **Testado com 2 ângulos de banco de imagens (não com câmera fixa real de garagem, ainda)** — os dois testes usaram clipes de banco de imagens, não a câmera de uma oficina de verdade. Mas já provou algo útil: câmera baixa fragmenta em várias sessões falsas, câmera elevada rastreia contínuo. Mesmo achado geral do [contador-onibus](https://github.com/siandrosena/contador-onibus): câmera/ângulo real precisa de validação própria antes de confiar no número numa operação específica — mas agora com uma recomendação concreta de ONDE instalar a câmera, não só "teste antes".
+- **Oclusão total e prolongada ainda fecha a sessão sozinha** (`max_absence_frames`, padrão ~1.5s) — se a pessoa ficar de verdade invisível por muito tempo (embaixo do veículo, câmera mal posicionada), o sistema não "adivinha" que ela continua lá; a solução testada e recomendada é câmera bem posicionada (ver seção acima), não um algoritmo mais esperto tentando compensar um ângulo de câmera ruim.
 - **A zona é um único retângulo fixo, não zonas por parte do veículo** — hoje mede "perto do veículo" como um todo, não diferencia "trabalhando no motor" de "trabalhando na roda". Dá pra evoluir pra múltiplas zonas, mas isso significaria calibrar cada zona por posição de câmera — não implementado ainda.
 - **Identidade é só o ID do rastreador, não a pessoa real** — o sistema não sabe QUEM é o mecânico, só que "alguém" ficou X segundos na zona. Ligar isso a uma pessoa real exigiria uma camada de identificação separada (crachá, reconhecimento facial etc.), que traz implicações de privacidade e trabalhistas que não foram endereçadas aqui de propósito — este projeto mede o processo, não vigia indivíduos.
 - **Considere o consentimento antes de usar isso de verdade**: mesmo sem identificação nominal, monitorar quanto tempo alguém passa em um lugar é sensível. Numa aplicação real, isso deveria ser transparente com a equipe e focado em melhorar o processo (identificar gargalo, redistribuir trabalho), não em vigiar desempenho individual.
