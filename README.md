@@ -44,6 +44,21 @@ pip install -r requirements.txt
 python src/dwell_report.py --source video.mp4 --zone 0.2,0.2,0.8,0.9 --save-video
 ```
 
+### Validado com vídeo real (não só sintético)
+
+Testado num clipe real de mecânico trabalhando embaixo de um veículo erguido ([vídeo livre de licença](https://www.pexels.com/video/a-worker-repairing-a-vehicle-8987075/), 14.5s):
+
+```
+Frames processados: 437
+Sessões registradas: 5
+  ID 1: 7.8s no total perto do veículo
+  ID 2: 0.0s | ID 3: 0.4s | ID 4: 0.3s | ID 5: 0.3s
+```
+
+O ID 1 é a pessoa de verdade (7.8s contínuos, batendo com o período em que ela fica visível no vídeo antes de ficar totalmente oculta pelo veículo). Os outros 4 IDs são **detecções espúrias e curtas** — o YOLO ocasionalmente enxerga a mesma pessoa como uma segunda caixa por poucos frames durante oclusão parcial (agachada embaixo do carro). Esse teste real também expôs um bug real que não aparecia no smoke test sintético: sem tratar isso, a sessão da pessoa que sai de cena ficava "aberta" até o fim do vídeo inteiro, inflando a duração — corrigido depois desse teste (`max_absence_frames`, ver `dwell_tracker.py`).
+
+**Conclusão honesta:** a detecção funciona em vídeo real, mas ruído de oclusão gera sessões curtas espúrias que uma aplicação de verdade precisaria filtrar (ex.: ignorar sessões abaixo de 1-2 segundos). Não é "pronto pra vender sem checar" — é uma base funcional com um problema real e conhecido, documentado em vez de escondido.
+
 ### Testes
 
 ```bash
@@ -64,7 +79,8 @@ pytest tests/
 
 ## ⚠️ Limitações conhecidas
 
-- **Ainda não testado com vídeo real de oficina/garagem** — só o smoke test sintético (formas, não pessoas) rodou ponta a ponta até agora. Mesmo achado do [contador-onibus](https://github.com/siandrosena/contador-onibus): câmera/ângulo real precisa de calibração e validação própria antes de confiar no número.
+- **Oclusão parcial gera detecções espúrias e curtas** — testado com vídeo real (ver seção acima): quando a pessoa fica parcialmente escondida (ex.: agachada embaixo do veículo), o YOLO ocasionalmente detecta uma segunda caixa por poucos frames, virando uma sessão curta separada e falsa. Uma aplicação real precisaria filtrar sessões abaixo de um limiar mínimo (1-2s).
+- **Não testado com câmera fixa de garagem de verdade, ainda** — o teste real usado foi um clipe de banco de imagens (ângulo/qualidade não necessariamente representativos de uma câmera fixa de oficina). Mesmo achado geral do [contador-onibus](https://github.com/siandrosena/contador-onibus): câmera/ângulo real precisa de validação própria antes de confiar no número numa operação específica.
 - **A zona é um único retângulo fixo, não zonas por parte do veículo** — hoje mede "perto do veículo" como um todo, não diferencia "trabalhando no motor" de "trabalhando na roda". Dá pra evoluir pra múltiplas zonas, mas isso significaria calibrar cada zona por posição de câmera — não implementado ainda.
 - **Identidade é só o ID do rastreador, não a pessoa real** — o sistema não sabe QUEM é o mecânico, só que "alguém" ficou X segundos na zona. Ligar isso a uma pessoa real exigiria uma camada de identificação separada (crachá, reconhecimento facial etc.), que traz implicações de privacidade e trabalhistas que não foram endereçadas aqui de propósito — este projeto mede o processo, não vigia indivíduos.
 - **Considere o consentimento antes de usar isso de verdade**: mesmo sem identificação nominal, monitorar quanto tempo alguém passa em um lugar é sensível. Numa aplicação real, isso deveria ser transparente com a equipe e focado em melhorar o processo (identificar gargalo, redistribuir trabalho), não em vigiar desempenho individual.
@@ -77,7 +93,7 @@ Inspirado numa necessidade real de operação de manutenção de frota (mesma fa
 
 ## 🇬🇧 English summary
 
-**How long does the mechanic spend near each vehicle?** An automated time-and-motion study: measures how long each tracked person stays within a defined zone (around a vehicle under service) using the shop's existing camera — no clipboard, no manual stopwatch. Reuses the same YOLOv8 + ByteTrack base as [contador-onibus](https://github.com/siandrosena/contador-onibus), with the same tracker-ID-switch deduplication so a continuous stay doesn't get split into fake sessions. Not yet validated against real shop footage (same finding as contador-onibus: real camera angle/quality needs its own calibration). Deliberately does not attempt individual worker identification — measures the process, not the person.
+**How long does the mechanic spend near each vehicle?** An automated time-and-motion study: measures how long each tracked person stays within a defined zone (around a vehicle under service) using the shop's existing camera — no clipboard, no manual stopwatch. Reuses the same YOLOv8 + ByteTrack base as [contador-onibus](https://github.com/siandrosena/contador-onibus), with the same tracker-ID-switch deduplication so a continuous stay doesn't get split into fake sessions. Validated against a real (stock) video, not just synthetic test footage — it correctly measured ~7.8s of continuous presence, and real testing surfaced (and led to fixing) a real bug: sessions used to stay artificially "open" until end-of-video when a person left the frame for good. Occlusion still causes some short spurious duplicate detections, documented as a known limitation rather than hidden. Deliberately does not attempt individual worker identification — measures the process, not the person.
 
 **Stack:** Python · YOLOv8 (Ultralytics) · ByteTrack · OpenCV.
 
