@@ -18,6 +18,19 @@ VISION_ENDPOINT = "https://vision.googleapis.com/v1/images:annotate"
 
 FLEET_NUMBER_PATTERN = re.compile(r"\b\d{3,4}\b")
 
+# Camera de seguranca carimba data e hora no canto do frame. Sem remover isso,
+# o OCR le o ANO ("2026") e devolve como se fosse o numero do veiculo — foi
+# exatamente o que aconteceu no primeiro teste com video real.
+DATA_HORA_PATTERN = re.compile(
+    r"\d{4}[-/]\d{2}[-/]\d{2}"      # 2026-01-15
+    r"|\d{2}[-/]\d{2}[-/]\d{4}"     # 01/09/2026
+    r"|\d{1,2}:\d{2}(?::\d{2})?"    # 08:30:00
+)
+
+# Nenhuma frota e numerada como ano. Descartar essa faixa evita o falso
+# positivo mais comum sem precisar recortar o frame.
+FAIXA_ANO = range(1900, 2101)
+
 
 @dataclass(frozen=True)
 class CropRegion:
@@ -61,9 +74,18 @@ def call_vision_ocr(image_bytes, api_key):
 
 def extract_fleet_number(raw_text):
     """Do texto bruto do OCR, extrai o candidato mais plausível a número de
-    frota (3-4 dígitos). Retorna None se nada bater o padrão."""
-    matches = FLEET_NUMBER_PATTERN.findall(raw_text)
-    return matches[0] if matches else None
+    frota (3-4 dígitos). Retorna None se nada bater o padrão.
+
+    Ordem importa: primeiro apaga data/hora do carimbo da câmera, depois
+    descarta o que parece ano, e só então prefere 4 dígitos sobre 3 — número
+    de frota costuma ter 4, e sobra de outro texto costuma ter 3.
+    """
+    sem_data = DATA_HORA_PATTERN.sub(" ", raw_text)
+    candidatos = [c for c in FLEET_NUMBER_PATTERN.findall(sem_data) if int(c) not in FAIXA_ANO]
+    if not candidatos:
+        return None
+    de_quatro = [c for c in candidatos if len(c) == 4]
+    return de_quatro[0] if de_quatro else candidatos[0]
 
 
 def sample_frames(total_frames, num_samples=3):

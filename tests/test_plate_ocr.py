@@ -52,3 +52,33 @@ def test_most_confident_reading_all_none_returns_none():
     value, count = most_confident_reading([None, None])
     assert value is None
     assert count == 0
+
+
+def test_extract_fleet_number_real_capture_ignores_camera_timestamp():
+    """Falha real capturada em campo (não hipótese): a câmera de segurança
+    carimba data/hora no frame, e o OCR devolvia '2026' (o ano do carimbo)
+    como se fosse o número da frota. Texto bruto exato devolvido pela Vision
+    API nesse teste real."""
+    texto_real = "2026-01-15 08:30:00)\nRT-014\n8256\nCamMark"
+    assert extract_fleet_number(texto_real) == "8256"
+
+
+def test_extract_fleet_number_ignores_br_date_format():
+    assert extract_fleet_number("01/09/2026\n8256") == "8256"
+
+
+def test_extract_fleet_number_ignores_time_without_seconds():
+    assert extract_fleet_number("10:27\n8256") == "8256"
+
+
+def test_extract_fleet_number_returns_three_digits_when_thats_all_there_is():
+    assert extract_fleet_number("frota 041 chegou") == "041"
+
+
+def test_extract_fleet_number_with_two_four_digit_numbers_picks_first():
+    """Ambiguidade real: 2 números de 4 dígitos no mesmo texto (ex.: número
+    da frota E um código de peça/ordem de serviço). Não tem como saber qual
+    é o certo só pelo texto — a escolha aqui é 'o primeiro que aparece',
+    documentada como escolha, não como certeza. Recortar a região certa do
+    frame (crop) evita esse caso na prática; ver README."""
+    assert extract_fleet_number("8256 os-9382") == "8256"

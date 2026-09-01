@@ -18,6 +18,7 @@ import cv2
 from ultralytics import YOLO
 
 from dwell_tracker import Zone, DwellTracker, filter_spurious_sessions
+from fleet_id import parse_crop_arg, read_fleet_number, NAO_LIDO
 
 PERSON_CLASS_ID = 0
 
@@ -48,6 +49,21 @@ def build_arg_parser():
         default=1.0,
         help="Descarta sessões mais curtas que isso (detecção espúria por oclusão, não permanência real)",
     )
+    parser.add_argument(
+        "--fleet-crop",
+        default=None,
+        help=(
+            "Liga a leitura do número de frota via OCR. 'x1,y1,x2,y2' com a região onde o "
+            "número está pintado (valores <=1 viram razão do frame), ou 'auto' pro frame inteiro. "
+            "Sem esta opção, nenhuma chamada de API é feita."
+        ),
+    )
+    parser.add_argument(
+        "--fleet-samples",
+        type=int,
+        default=3,
+        help="Quantos frames amostrar pro OCR (1 chamada de API por amostra, o vídeo inteiro não é lido)",
+    )
     return parser
 
 
@@ -68,7 +84,15 @@ def run(args):
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
+
+    frota, concordaram, amostras = NAO_LIDO, 0, 0
+    if args.fleet_crop:
+        crop = parse_crop_arg(args.fleet_crop, width, height)
+        frota, concordaram, amostras = read_fleet_number(
+            source_path, total_frames, crop, num_samples=args.fleet_samples
+        )
 
     zone = parse_zone_arg(args.zone, width, height)
     tracker = DwellTracker(zone=zone)
@@ -120,10 +144,11 @@ def run(args):
     descartadas = len(todas_sessoes) - len(sessoes)
 
     with open(output_path, "w", newline="", encoding="utf-8") as f:
-        writer_csv = csv.DictWriter(f, fieldnames=["track_id", "inicio_seg", "fim_seg", "duracao_seg"])
+        writer_csv = csv.DictWriter(f, fieldnames=["frota", "track_id", "inicio_seg", "fim_seg", "duracao_seg"])
         writer_csv.writeheader()
         for session in sessoes:
             writer_csv.writerow({
+                "frota": frota,
                 "track_id": session.track_id,
                 "inicio_seg": round(session.start_frame / fps, 1),
                 "fim_seg": round(session.end_frame / fps, 1),
@@ -134,10 +159,16 @@ def run(args):
     for session in sessoes:
         totals[session.track_id] = totals.get(session.track_id, 0.0) + session.duration_seconds(fps)
 
+    if args.fleet_crop:
+        if frota == NAO_LIDO:
+            print("Número de frota: não consegui ler (o tempo abaixo continua válido)")
+        else:
+            print(f"Número de frota: {frota} ({concordaram} de {amostras} amostras concordaram)")
     print(f"Frames processados: {frame_idx}")
     print(f"Sessões registradas: {len(sessoes)} (descartadas {descartadas} espúrias < {args.min_session_seconds}s)")
     for track_id, total in totals.items():
-        print(f"  ID {track_id}: {total:.1f}s no total perto do veículo")
+        etiqueta = "" if frota == NAO_LIDO else f"VEÍCULO-{frota} · "
+        print(f"  {etiqueta}ID {track_id}: {total:.1f}s no total perto do veículo")
     print(f"Log salvo em: {output_path}")
     return 0
 

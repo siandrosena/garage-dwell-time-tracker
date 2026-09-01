@@ -128,6 +128,24 @@ Rodei a detecção de verdade (script `scripts/test_vehicle_proximity_real.py`) 
 
 **Não encontrei, com busca razoável em bancos de vídeo gratuitos (Pexels), um vídeo de licença livre com câmera de cima verdadeira (nadir) mostrando pessoa E veículo numa cena de oficina/garagem.** Os candidatos reais testados foram: um drone muito alto sobre um caminhão sendo carregado (sem nenhuma pessoa visível) e uma câmera aérea oblíqua de canteiro de obra (pessoas e carros longe um do outro, nunca próximos o suficiente pra gerar uma sessão de proximidade de verdade). Documentando isso em vez de simular um resultado bonito com dado que não existe.
 
+## 🔢 De QUEM é o veículo? Ligando o tempo medido a um número de frota (OCR)
+
+Pensa assim: até aqui o sistema mede "teve gente perto de UM veículo por X tempo" — mas não diz QUAL. É como um contador de pessoas na porta de uma loja: sabe quantas entraram, não sabe o nome de ninguém. Pra virar "o ônibus 1048 ficou 40 minutos com mecânico", falta ler o número pintado no próprio veículo — e é isso que o OCR (`src/plate_ocr.py` + `src/fleet_id.py`) faz.
+
+- **Câmera fixa não precisa ler todo frame.** O número pintado no veículo não muda de posição nem de valor durante o vídeo — então em vez de rodar OCR em cada quadro (caro e desnecessário), o sistema amostra só alguns frames espalhados (início/meio/fim, `--fleet-samples`, padrão 3) e usa a leitura que mais se repetiu entre eles.
+- **Custo real, sem maquiagem: 3 amostras = 3 chamadas de API por vídeo, não uma por frame.** Um vídeo de 15s a 30fps tem 450 frames — rodar OCR em todos seria 450 chamadas; amostrar 3 é 3. A diferença de custo é de duas ordens de grandeza, e a leitura por maioria (`most_confident_reading`) já filtra boa parte do ruído de uma leitura errada isolada.
+- **`--fleet-crop auto` (frame inteiro) funciona, mas é chute educado — recortar a região certa é o que dá confiança de verdade.** Achado real testando com vídeo real da garagem: o OCR leu o texto inteiro do frame, incluindo o **carimbo de data/hora da própria câmera de segurança** ("2026-01-15 08:30:00") — e sem tratamento, o regex de "3 a 4 dígitos" pegava o **ano (2026)** como se fosse o número da frota. Corrigido descartando padrões de data/hora e qualquer candidato dentro da faixa de ano plausível (`FAIXA_ANO`) antes de escolher o número — mas o jeito confiável de evitar esse tipo de ambiguidade na raiz é recortar (`--fleet-crop x1,y1,x2,y2`) só a região onde o número está pintado, não o frame inteiro.
+- **Identificação nunca derruba a medição de tempo.** Sem chave de API (`GOOGLE_VISION_API_KEY`), com a rede fora do ar, ou com o OCR não achando nada — em qualquer um desses casos a leitura de frota vira `NAO_LIDO` e o tempo medido continua saindo normal no CSV. Testado com mock nos 3 cenários (14 testes em `test_fleet_id.py` + `test_plate_ocr.py`), zero chamada real de API nos testes.
+
+### Como rodar com identificação de frota
+
+```bash
+python src/dwell_report.py --source video.mp4 --zone 0.2,0.2,0.8,0.9 --fleet-crop auto
+python src/dwell_report.py --source video.mp4 --zone 0.2,0.2,0.8,0.9 --fleet-crop 0.05,0.85,0.35,0.98 --fleet-samples 5
+```
+
+O CSV de saída ganha a coluna `frota` (valor `NAO_LIDO` se a leitura falhar ou a flag não for usada).
+
 ## ⚠️ Limitações conhecidas
 
 - **Oclusão parcial gera detecções espúrias e curtas** — testado com vídeo real (ver seção acima): quando a pessoa fica parcialmente escondida (ex.: agachada embaixo do veículo), o YOLO ocasionalmente detecta uma segunda caixa por poucos frames, virando uma sessão curta separada e falsa. Uma aplicação real precisaria filtrar sessões abaixo de um limiar mínimo (1-2s).
