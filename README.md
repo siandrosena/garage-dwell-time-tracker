@@ -92,7 +92,7 @@ pytest tests/
 
 7 testes cobrindo a lógica de permanência: entrada/saída de zona, sessão que fica aberta até o fim do vídeo, múltiplas pessoas com sessões independentes, e o caso mais importante — troca de ID do tracker no meio da permanência não pode virar duas sessões.
 
-`scripts/make_demo_video.py` gera um vídeo sintético só pra smoke test do pipeline ponta a ponta (I/O de vídeo, tracker, CSV) — não valida detecção real.
+`python scripts/make_demo_video.py` gera um vídeo sintético só pra smoke test do pipeline ponta a ponta (I/O de vídeo, tracker, CSV) — não valida detecção real.
 
 ### Stack
 
