@@ -23,7 +23,7 @@ FLEET_NUMBER_PATTERN = re.compile(r"\b\d{3,4}\b")
 # exatamente o que aconteceu no primeiro teste com video real.
 DATA_HORA_PATTERN = re.compile(
     r"\d{4}[-/]\d{2}[-/]\d{2}"      # 2026-01-15
-    r"|\d{2}[-/]\d{2}[-/]\d{4}"     # 01/09/2026
+    r"|\d{2}[-/]\d{2}[-/]\d{4}"     # 15/01/2026
     r"|\d{1,2}:\d{2}(?::\d{2})?"    # 08:30:00
 )
 
