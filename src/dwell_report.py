@@ -64,6 +64,15 @@ def build_arg_parser():
         default=3,
         help="Quantos frames amostrar pro OCR (1 chamada de API por amostra, o vídeo inteiro não é lido)",
     )
+    parser.add_argument(
+        "--tracker-config",
+        default=str(Path(__file__).resolve().parent.parent / "trackers" / "bytetrack_buffer150.yaml"),
+        help=(
+            "Arquivo de config do tracker. Padrão: track_buffer=150, validado em vídeo real "
+            "(corta 36%% dos IDs falsos por oclusão vs. o padrão do ultralytics, sem juntar pessoas "
+            "diferentes — ver scripts/compare_trackers.py e scripts/diagnose_id_switching.py)."
+        ),
+    )
     return parser
 
 
@@ -108,7 +117,7 @@ def run(args):
         source=str(source_path),
         classes=[PERSON_CLASS_ID],
         conf=args.conf,
-        tracker="bytetrack.yaml",
+        tracker=args.tracker_config,
         persist=True,
         stream=True,
         verbose=False,

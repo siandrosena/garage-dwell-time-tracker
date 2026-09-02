@@ -48,6 +48,22 @@ pip install -r requirements.txt
 python src/dwell_report.py --source video.mp4 --zone 0.2,0.2,0.8,0.9 --save-video
 ```
 
+### ⚠️ No Windows: clone em caminho curto
+
+O PyTorch (dependência do YOLO) tem arquivos com caminho interno muito longo. Se você
+clonar em uma pasta funda — algo como `C:\Users\Fulano\OneDrive - Empresa\Documentos\Projetos\` —
+o `pip install` estoura o limite de 260 caracteres do Windows e falha com:
+
+```
+ERROR: Could not install packages due to an OSError: [Errno 2] No such file or directory:
+'...\torch\include\ATen\native\transformers\cuda\mem_eff_attention\iterators\predicated_tile_access_iterator_residual_last.h'
+HINT: This error might have occurred since this system does not have Windows Long Path support enabled.
+```
+
+**Parece defeito do projeto e não é.** A solução é clonar em caminho curto, tipo `C:\dev\`.
+(Alternativa: habilitar Long Path Support no Windows, mas exige privilégio de administrador.)
+
+
 ### Validado com vídeo real (não só sintético)
 
 Testado num clipe real de mecânico trabalhando embaixo de um veículo erguido ([vídeo livre de licença](https://www.pexels.com/video/a-worker-repairing-a-vehicle-8987075/), 14.5s):
@@ -90,7 +106,7 @@ pip install -r requirements-dev.txt
 pytest tests/
 ```
 
-7 testes cobrindo a lógica de permanência: entrada/saída de zona, sessão que fica aberta até o fim do vídeo, múltiplas pessoas com sessões independentes, e o caso mais importante — troca de ID do tracker no meio da permanência não pode virar duas sessões.
+Os testes cobrem a lógica de permanência: entrada/saída de zona, sessão que fica aberta até o fim do vídeo, múltiplas pessoas com sessões independentes, e o caso mais importante — troca de ID do tracker no meio da permanência não pode virar duas sessões.
 
 `python scripts/make_demo_video.py` gera um vídeo sintético só pra smoke test do pipeline ponta a ponta (I/O de vídeo, tracker, CSV) — não valida detecção real.
 
@@ -115,7 +131,7 @@ Por que isso importa de verdade: "o ônibus 1048 ficou 3h parado, mas só teve m
 
 - **`BoundingBox.expanded()` + `is_near_vehicle()`** — "perto" é relativo ao tamanho do próprio veículo (meio comprimento/altura de folga), não uma distância fixa em pixels. Testado explicitamente: a mesma distância em pixels conta como "perto" de um caminhão grande e "longe" de um carro pequeno — do contrário um limiar fixo erraria pra qualquer veículo de tamanho diferente do que foi calibrado.
 - **`VehicleProximityTracker`** — mesma lógica de sessão do `DwellTracker`, mas a "zona" é o veículo (que se move), não um retângulo fixo do frame. Se a pessoa troca de veículo sem sair de "perto de algum", fecha a sessão do antigo e abre a do novo.
-- **10 testes** cobrindo: entrada/saída de proximidade, margem proporcional ao tamanho do veículo, escolha do veículo mais próximo quando há mais de um por perto, troca de veículo, e soma de tempo por veículo (juntando várias pessoas).
+- Os testes cobrem: entrada/saída de proximidade, margem proporcional ao tamanho do veículo, escolha do veículo mais próximo quando há mais de um por perto, troca de veículo, e soma de tempo por veículo (juntando várias pessoas).
 
 ### Teste real — e um achado honesto sobre detecção de veículo
 
@@ -135,7 +151,7 @@ Pensa assim: até aqui o sistema mede "teve gente perto de UM veículo por X tem
 - **Câmera fixa não precisa ler todo frame.** O número pintado no veículo não muda de posição nem de valor durante o vídeo — então em vez de rodar OCR em cada quadro (caro e desnecessário), o sistema amostra só alguns frames espalhados (início/meio/fim, `--fleet-samples`, padrão 3) e usa a leitura que mais se repetiu entre eles.
 - **Custo real, sem maquiagem: 3 amostras = 3 chamadas de API por vídeo, não uma por frame.** Um vídeo de 15s a 30fps tem 450 frames — rodar OCR em todos seria 450 chamadas; amostrar 3 é 3. A diferença de custo é de duas ordens de grandeza, e a leitura por maioria (`most_confident_reading`) já filtra boa parte do ruído de uma leitura errada isolada.
 - **`--fleet-crop auto` (frame inteiro) funciona, mas é chute educado — recortar a região certa é o que dá confiança de verdade.** Achado real testando com vídeo real da garagem: o OCR leu o texto inteiro do frame, incluindo o **carimbo de data/hora da própria câmera de segurança** ("2026-01-15 08:30:00") — e sem tratamento, o regex de "3 a 4 dígitos" pegava o **ano (2026)** como se fosse o número da frota. Corrigido descartando padrões de data/hora e qualquer candidato dentro da faixa de ano plausível (`FAIXA_ANO`) antes de escolher o número — mas o jeito confiável de evitar esse tipo de ambiguidade na raiz é recortar (`--fleet-crop x1,y1,x2,y2`) só a região onde o número está pintado, não o frame inteiro.
-- **Identificação nunca derruba a medição de tempo.** Sem chave de API (`GOOGLE_VISION_API_KEY`), com a rede fora do ar, ou com o OCR não achando nada — em qualquer um desses casos a leitura de frota vira `NAO_LIDO` e o tempo medido continua saindo normal no CSV. Testado com mock nos 3 cenários (14 testes em `test_fleet_id.py` + `test_plate_ocr.py`), zero chamada real de API nos testes.
+- **Identificação nunca derruba a medição de tempo.** Sem chave de API (`GOOGLE_VISION_API_KEY`), com a rede fora do ar, ou com o OCR não achando nada — em qualquer um desses casos a leitura de frota vira `NAO_LIDO` e o tempo medido continua saindo normal no CSV. Testado com mock nos 3 cenários (`test_fleet_id.py` e `test_plate_ocr.py`), zero chamada real de API nos testes.
 
 ### Como rodar com identificação de frota
 
