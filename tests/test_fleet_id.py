@@ -136,7 +136,7 @@ def test_ocr_with_no_text_degrades_to_nao_lido(monkeypatch):
 def test_successful_majority_reading_end_to_end(monkeypatch):
     """Caminho feliz: 2 de 3 amostras concordam em '8256' -> vira a leitura final."""
     _mock_video_layer(monkeypatch)
-    respostas = iter(["8256", "1G41", "8256"])  # a 2a leitura "erra" 1 caractere (ruído de OCR)
+    respostas = iter(["8256", "8Z56", "8256"])  # a 2a leitura "erra" 1 caractere (ruído de OCR)
     monkeypatch.setattr(fleet_id, "call_vision_ocr", lambda image_bytes, api_key: next(respostas))
 
     numero, concordaram, amostras = read_fleet_number(

@@ -43,7 +43,7 @@ def test_sample_frames_handles_empty_video():
 
 
 def test_most_confident_reading_picks_majority():
-    value, count = most_confident_reading(["8256", "8256", "1G41", None])
+    value, count = most_confident_reading(["8256", "8256", "8Z56", None])
     assert value == "8256"
     assert count == 2
 
@@ -56,11 +56,12 @@ def test_most_confident_reading_all_none_returns_none():
 
 def test_extract_fleet_number_real_capture_ignores_camera_timestamp():
     """Falha real capturada em campo (não hipótese): a câmera de segurança
-    carimba data/hora no frame, e o OCR devolvia '2026' (o ano do carimbo)
-    como se fosse o número da frota. Texto bruto exato devolvido pela Vision
-    API nesse teste real."""
-    texto_real = "2026-01-15 08:30:00)\nRT-014\n8256\nCamMark"
-    assert extract_fleet_number(texto_real) == "8256"
+    carimba data/hora no frame, e o OCR devolvia o ano do carimbo (ex.: 2026)
+    como se fosse o número da frota. Estrutura fiel ao texto bruto real
+    devolvido pela Vision API (carimbo + código de rota + número de frota +
+    marca-d'água do fabricante da câmera), com valores trocados por fictícios."""
+    texto_capturado = "2026-01-15 08:30:00)\nRT-014\n8256\nCamMark"
+    assert extract_fleet_number(texto_capturado) == "8256"
 
 
 def test_extract_fleet_number_ignores_br_date_format():
